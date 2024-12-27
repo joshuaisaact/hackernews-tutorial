@@ -14,6 +14,14 @@ export const Link = objectType({
     t.nonNull.int("id");
     t.nonNull.string("description");
     t.nonNull.string("url");
+    t.field("postedBy", {
+      type: "User",
+      resolve(parent, args, context) {
+        return context.prisma.link
+          .findUnique({ where: { id: parent.id } })
+          .postedBy();
+      },
+    });
   },
 });
 
@@ -56,10 +64,18 @@ export const LinkMutation = extendType({
       },
 
       async resolve(parent, args, context) {
+        const { description, url } = args;
+        const { userId } = context;
+
+        if (!userId) {
+          throw new Error("Cannot post without logging in");
+        }
+
         const newLink = await context.prisma.link.create({
           data: {
-            description: args.description,
-            url: args.url,
+            description,
+            url,
+            postedBy: { connect: { id: userId } },
           },
         });
         return newLink;
@@ -93,10 +109,22 @@ export const LinkMutation = extendType({
       },
 
       async resolve(parent, args, context) {
-        return await context.prisma.link.delete({
-          where: {
-            id: parseInt(args.id),
-          },
+        const { userId } = context;
+
+        if (!userId) {
+          throw new Error("Cannot delete without logging in");
+        }
+
+        const link = await context.prisma.link.findUnique({
+          where: { id: parseInt(args.id) },
+        });
+
+        if (link?.postedById !== userId) {
+          throw new Error("Not authorized to delete this link");
+        }
+
+        return context.prisma.link.delete({
+          where: { id: parseInt(args.id) },
         });
       },
     });
